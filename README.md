@@ -79,22 +79,9 @@ disclosure text --custom-tools=tools.json --input=pr-body.txt
 echo "I used GPT-4 Turbo" | disclosure text --custom-tools=tools.json --format=json
 ```
 
-Names use the existing case-insensitive, word-boundary matching rules. Spaces
-and hyphens in names also match whitespace, underscores, or hyphens in text;
-regex metacharacters are treated literally. Surrounding whitespace is trimmed,
-and case-insensitive duplicates are ignored, preferring the built-in spelling
-or the first custom spelling. Overlapping mentions at the same position prefer
-the longer name.
+Names use the existing case-insensitive matching rules; spaces and hyphens also match whitespace, underscores, or hyphens in text, and regex characters are literal. Duplicate names are ignored, preferring built-in spellings, and longer overlapping matches take precedence. Custom names supplement built-in names for this `text` invocation, including checkbox detection. Choose specific names to avoid false positives.
 
-Custom names also work with checkbox detection. They apply only to the current
-`text` invocation; `scan` and the built-in list are unchanged. No catalogue is
-downloaded during scanning. Choose specific names to avoid ordinary words
-producing false positives.
-
-The file must contain a single JSON object with `version: 1` and a `custom_tools`
-array of non-empty strings. An empty array keeps the built-in names only.
-Unreadable files, invalid entries, unknown fields, and unsupported versions
-produce an error (exit code `2`).
+The file must contain one JSON object with `version: 1` and a `custom_tools` array of non-empty strings. An empty array keeps built-in names only. Invalid files return an error (exit code `2`).
 
 ### Numeric scoring
 

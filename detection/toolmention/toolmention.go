@@ -36,9 +36,7 @@ func getToolPatterns(names []string) ([]toolPattern, error) {
 		}
 		compiledRegex, err := regexp.Compile(pattern)
 		if err != nil {
-			return []toolPattern{}, fmt.Errorf(
-				"error while compiling regex for pattern '%s', details: %s", pattern, err,
-			)
+			return nil, fmt.Errorf("compile tool mention pattern %q: %w", pattern, err)
 		}
 		toolPatterns = append(toolPatterns, toolPattern{
 			name:    name,
@@ -124,7 +122,7 @@ type Detector struct {
 	CheckboxAIUsedRegex      *regexp.Regexp
 	CheckboxAINotUsedRegex   *regexp.Regexp
 	initOnce                 sync.Once
-	CustomToolPatterns       []toolPattern
+	customToolPatterns       []toolPattern
 }
 
 var toolPatterns []toolPattern
@@ -181,7 +179,7 @@ func (d *Detector) Detect(input detection.Input) []detection.Finding {
 		return d.checkboxAwareDetect(text)
 	}
 
-	toolMatches := matchTools(text, d.CustomToolPatterns)
+	toolMatches := matchTools(text, d.customToolPatterns)
 	findings := make([]detection.Finding, 0, len(toolMatches))
 	if len(toolMatches) > 0 {
 		score := detection.ToolMentionBaseScore
@@ -195,7 +193,7 @@ func (d *Detector) Detect(input detection.Input) []detection.Finding {
 
 func (d *Detector) checkboxAwareDetect(inputText string) []detection.Finding {
 	inputText = stripComments(inputText)
-	toolMatches := matchTools(inputText, d.CustomToolPatterns)
+	toolMatches := matchTools(inputText, d.customToolPatterns)
 
 	var aiUsedCbTicked, aiNotUsedCbTicked bool
 
@@ -246,9 +244,13 @@ func (d *Detector) checkboxAwareDetect(inputText string) []detection.Finding {
 // Needs to be called before Detect; repeated calls replace previous custom names.
 func (d *Detector) SetCustomTools(names []string) error {
 	if len(names) == 0 {
-		d.CustomToolPatterns = []toolPattern{}
+		d.customToolPatterns = nil
+		return nil
 	}
 	seen := map[string]bool{}
+	for _, tp := range toolPatterns {
+		seen[strings.ToLower(tp.name)] = true
+	}
 	cleanedNames := []string{}
 	for i, name := range names {
 		name = strings.TrimSpace(name)
@@ -267,6 +269,6 @@ func (d *Detector) SetCustomTools(names []string) error {
 	if err != nil {
 		return err
 	}
-	d.CustomToolPatterns = customToolPatterns
+	d.customToolPatterns = customToolPatterns
 	return nil
 }

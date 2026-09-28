@@ -17,6 +17,7 @@ func TestCustomTools(t *testing.T) {
 	}{
 		{"supplement built-ins", []string{"Example Assistant", "Example Model 1"}, "Example Assistant and Example Model 1 helped alongside Cursor", []string{"Example Assistant", "Example Model 1", "Cursor"}},
 		{"trim and deduplicate", []string{" Example Assistant ", "example assistant", "CURSOR"}, "EXAMPLE ASSISTANT and cursor, then Example Assistant", []string{"Example Assistant", "Cursor"}},
+		{"built-in spelling wins across mentions", []string{"CURSOR"}, "Cursor and CURSOR", []string{"Cursor"}},
 		{"longest mention", []string{"GPT-4 Turbo", "Claude Opus 4.6"}, "GPT-4 Turbo and Claude Opus 4.6", []string{"GPT-4 Turbo", "Claude Opus 4.6"}},
 		{"separator variants", []string{"Example Model-1"}, "example_model 1", []string{"Example Model-1"}},
 		{"literal regex characters", []string{"Example.AI", "Example[1]", "Example++"}, "Used Example.AI, Example[1], and Example++.", []string{"Example.AI", "Example[1]", "Example++"}},
