@@ -991,3 +991,61 @@ func TestRunTextCommandWithCheckboxDetection(t *testing.T) {
 		})
 	}
 }
+
+func TestRunScanProgress(t *testing.T) {
+	dir := initTestRepo(t)
+
+	oldDelay := scanProgressDelay
+	scanProgressDelay = 0
+	t.Cleanup(func() {
+		scanProgressDelay = oldDelay
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"scan", "--format=json", dir}, &stdout, &stderr)
+	if code != ExitAI && code != ExitNoAI {
+		t.Fatalf("unexpected exit code: %d", code)
+	}
+
+	out := stderr.String()
+	if !strings.Contains(out, "Scanning commits:") {
+		t.Fatalf("expected progress in stderr, got: %q", out)
+	}
+	if !strings.Contains(out, "3/3 (100%)") {
+		t.Fatalf("expected 3/3 (100%%) in stderr, got: %q", out)
+	}
+}
+
+func TestRunScanNoProgressFlag(t *testing.T) {
+	dir := initTestRepo(t)
+
+	oldDelay := scanProgressDelay
+	scanProgressDelay = 0
+	t.Cleanup(func() {
+		scanProgressDelay = oldDelay
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"scan", "--no-progress", "--format=json", dir}, &stdout, &stderr)
+	if code != ExitAI && code != ExitNoAI {
+		t.Fatalf("unexpected exit code: %d", code)
+	}
+
+	if stderr.Len() != 0 {
+		t.Fatalf("expected empty stderr with --no-progress, got: %q", stderr.String())
+	}
+}
+
+func TestRunScanFastScanNoProgress(t *testing.T) {
+	dir := initTestRepo(t)
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"scan", "--format=json", dir}, &stdout, &stderr)
+	if code != ExitAI && code != ExitNoAI {
+		t.Fatalf("unexpected exit code: %d", code)
+	}
+
+	if stderr.Len() != 0 {
+		t.Fatalf("expected empty stderr for fast scan under threshold, got: %q", stderr.String())
+	}
+}

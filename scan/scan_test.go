@@ -546,3 +546,42 @@ func TestScanCommitEmptyDetectorList(t *testing.T) {
 		t.Errorf("score=%v want 0", result.Score)
 	}
 }
+
+func TestScanCommitRangeWithProgress(t *testing.T) {
+	dir, hashes := initTestRepo(t)
+	detectors := allDetectors()
+
+	var calls [][2]int
+	progress := func(done, total int) {
+		calls = append(calls, [2]int{done, total})
+	}
+
+	report, err := ScanCommitRangeWithProgress(dir, hashes[0]+".."+hashes[4], detectors, progress)
+	if err != nil {
+		t.Fatalf("ScanCommitRangeWithProgress: %v", err)
+	}
+	if len(report.Commits) != 4 {
+		t.Fatalf("expected 4 commits, got %d", len(report.Commits))
+	}
+	if len(calls) != 4 {
+		t.Fatalf("expected 4 progress calls, got %d", len(calls))
+	}
+	for i, c := range calls {
+		if c[0] != i+1 || c[1] != 4 {
+			t.Errorf("call %d = (%d, %d), want (%d, 4)", i, c[0], c[1], i+1)
+		}
+	}
+}
+
+func TestScanCommitRangeWithProgressNil(t *testing.T) {
+	dir, hashes := initTestRepo(t)
+	detectors := allDetectors()
+
+	report, err := ScanCommitRangeWithProgress(dir, hashes[0]+".."+hashes[2], detectors, nil)
+	if err != nil {
+		t.Fatalf("ScanCommitRangeWithProgress: %v", err)
+	}
+	if len(report.Commits) != 2 {
+		t.Fatalf("expected 2 commits, got %d", len(report.Commits))
+	}
+}
