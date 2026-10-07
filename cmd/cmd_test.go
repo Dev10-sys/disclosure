@@ -1008,8 +1008,46 @@ func TestRunScanProgress(t *testing.T) {
 	}
 
 	out := stderr.String()
+	if !strings.Contains(out, "Loading commits:") {
+		t.Fatalf("expected loading progress in stderr, got: %q", out)
+	}
 	if !strings.Contains(out, "Scanning commits:") {
-		t.Fatalf("expected progress in stderr, got: %q", out)
+		t.Fatalf("expected scanning progress in stderr, got: %q", out)
+	}
+	if !strings.Contains(out, "3/3 (100%)") {
+		t.Fatalf("expected 3/3 (100%%) in stderr, got: %q", out)
+	}
+}
+
+func TestRunScanSlowLoadingPhase(t *testing.T) {
+	dir := initTestRepo(t)
+
+	oldDelay := scanProgressDelay
+	scanProgressDelay = 10 * time.Millisecond
+	t.Cleanup(func() {
+		scanProgressDelay = oldDelay
+	})
+
+	oldHook := testHookLoading
+	testHookLoading = func() {
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Cleanup(func() {
+		testHookLoading = oldHook
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"scan", "--format=json", dir}, &stdout, &stderr)
+	if code != ExitAI && code != ExitNoAI {
+		t.Fatalf("unexpected exit code: %d", code)
+	}
+
+	out := stderr.String()
+	if !strings.Contains(out, "Loading commits:") {
+		t.Fatalf("expected loading progress in stderr for slow loading phase, got: %q", out)
+	}
+	if !strings.Contains(out, "Scanning commits:") {
+		t.Fatalf("expected scanning progress in stderr, got: %q", out)
 	}
 	if !strings.Contains(out, "3/3 (100%)") {
 		t.Fatalf("expected 3/3 (100%%) in stderr, got: %q", out)

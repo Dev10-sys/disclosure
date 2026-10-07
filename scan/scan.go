@@ -29,9 +29,16 @@ type Report struct {
 	Summary Summary        `json:"summary"`
 }
 
-// ProgressFunc is called after each commit is scanned with the number of
-// commits processed so far and the total number of commits to scan.
-type ProgressFunc func(done, total int)
+// ProgressPhase identifies the current scan phase.
+type ProgressPhase string
+
+const (
+	PhaseLoading  ProgressPhase = "loading"
+	PhaseScanning ProgressPhase = "scanning"
+)
+
+// ProgressFunc is called to report progress during scan operations.
+type ProgressFunc func(phase ProgressPhase, done, total int)
 
 // ScanCommitRange scans all commits in the given range using the provided detectors.
 func ScanCommitRange(repoPath, commitRange string, detectors []detection.Detector) (Report, error) {
@@ -39,9 +46,16 @@ func ScanCommitRange(repoPath, commitRange string, detectors []detection.Detecto
 }
 
 // ScanCommitRangeWithProgress scans all commits in the given range using the provided detectors,
-// invoking progress after each commit is processed if non-nil.
+// invoking progress during history loading and commit scanning if non-nil.
 func ScanCommitRangeWithProgress(repoPath, commitRange string, detectors []detection.Detector, progress ProgressFunc) (Report, error) {
-	commits, err := gitops.ListCommits(repoPath, commitRange)
+	var loadProgress gitops.ProgressFunc
+	if progress != nil {
+		loadProgress = func(loaded int) {
+			progress(PhaseLoading, loaded, 0)
+		}
+	}
+
+	commits, err := gitops.ListCommitsWithProgress(repoPath, commitRange, loadProgress)
 	if err != nil {
 		return Report{}, err
 	}
@@ -56,7 +70,7 @@ func ScanCommitRangeWithProgress(repoPath, commitRange string, detectors []detec
 		result := scanOneCommit(c, branchName, detectors)
 		results = append(results, result)
 		if progress != nil {
-			progress(i+1, total)
+			progress(PhaseScanning, i+1, total)
 		}
 	}
 

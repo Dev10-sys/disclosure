@@ -28,6 +28,7 @@ import (
 var Version = "dev"
 
 var scanProgressDelay = 10 * time.Second
+var testHookLoading func()
 
 // resolveVersion returns the CLI version to display. Release builds inject the
 // version at link time via ldflags (-X ...cmd.Version=...). When that has not
@@ -238,27 +239,38 @@ Examples:
 			detectors := allDetectors(confidenceLevels, detectorConfig{})
 
 			var progress scan.ProgressFunc
+			progressShown := false
 			if !noProgressFlag {
 				startTime := time.Now()
-				progressShown := false
-				progress = func(done, total int) {
+				progress = func(phase scan.ProgressPhase, done, total int) {
+					if testHookLoading != nil && phase == scan.PhaseLoading {
+						testHookLoading()
+					}
 					if !progressShown && time.Since(startTime) < scanProgressDelay {
 						return
 					}
 					progressShown = true
-					pct := 0
-					if total > 0 {
-						pct = (done * 100) / total
-					}
-					fmt.Fprintf(stderr, "\rScanning commits: %d/%d (%d%%)", done, total, pct)
-					if done == total {
-						fmt.Fprintln(stderr)
+					switch phase {
+					case scan.PhaseLoading:
+						fmt.Fprintf(stderr, "\rLoading commits: %d", done)
+					case scan.PhaseScanning:
+						pct := 0
+						if total > 0 {
+							pct = (done * 100) / total
+						}
+						fmt.Fprintf(stderr, "\rScanning commits: %d/%d (%d%%)", done, total, pct)
+						if done == total {
+							fmt.Fprintln(stderr)
+						}
 					}
 				}
 			}
 
 			report, err := scan.ScanCommitRangeWithProgress(repoPath, rangeFlag, detectors, progress)
 			if err != nil {
+				if progressShown {
+					fmt.Fprintln(stderr)
+				}
 				fmt.Fprintf(stderr, "error: %v\n", err)
 				*exitCode = ExitError
 				return err
