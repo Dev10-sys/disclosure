@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -68,21 +70,25 @@ type detectorConfig struct {
 	checkboxAIUsedLabel     string
 	checkboxAINotUsedLabel  string
 	enableCheckboxDetection bool
+	customTools             []string
 }
 
-func allDetectors(confidenceLevels map[detection.Confidence]float64, config detectorConfig) []detection.Detector {
+func allDetectors(confidenceLevels map[detection.Confidence]float64, config detectorConfig) ([]detection.Detector, error) {
 	toolmentionDetector := &toolmention.Detector{}
 	toolmentionDetector.SetConfidenceLevels(confidenceLevels)
 	toolmentionDetector.SetCheckboxConfig(
 		config.enableCheckboxDetection, config.checkboxAIUsedLabel, config.checkboxAINotUsedLabel,
 	)
+	if err := toolmentionDetector.SetCustomTools(config.customTools); err != nil {
+		return nil, fmt.Errorf("configure custom tools: %w", err)
+	}
 	return []detection.Detector{
 		&committer.Detector{ConfidenceLevels: confidenceLevels},
 		&gitnotes.Detector{ConfidenceLevels: confidenceLevels},
 		&trailer.Detector{ConfidenceLevels: confidenceLevels},
 		toolmentionDetector,
 		&branchname.Detector{ConfidenceLevels: confidenceLevels},
-	}
+	}, nil
 }
 
 // parseKeyValueFloatList parses strings like "a=1,b=2.5" into a map[string]float64.
@@ -116,6 +122,33 @@ func parseKeyValueFloatList(s string) (map[string]float64, error) {
 		out[key] = v
 	}
 	return out, nil
+}
+
+func loadCustomTools(path string) ([]string, error) {
+	data, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return nil, fmt.Errorf("read custom tools file %q: %w", path, err)
+	}
+
+	var config struct {
+		Version     int      `json:"version"`
+		CustomTools []string `json:"custom_tools"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&config); err != nil {
+		return nil, fmt.Errorf("parse custom tools file %q: %w", path, err)
+	}
+	if err := decoder.Decode(new(json.RawMessage)); err != io.EOF {
+		return nil, fmt.Errorf("custom tools file %q must contain a single JSON object", path)
+	}
+	if config.Version != 1 {
+		return nil, fmt.Errorf("custom tools file %q: version must be 1 (got %d)", path, config.Version)
+	}
+	if config.CustomTools == nil {
+		return nil, fmt.Errorf("custom tools file %q: custom_tools must be an array of tool or model names", path)
+	}
+	return config.CustomTools, nil
 }
 
 // Run is the main entry point for the CLI. Returns an exit code.
@@ -236,7 +269,10 @@ Examples:
 				}
 			}
 
-			detectors := allDetectors(confidenceLevels, detectorConfig{})
+			detectors, err := allDetectors(confidenceLevels, detectorConfig{})
+			if err != nil {
+				return err
+			}
 
 			var progress scan.ProgressFunc
 			progressShown := false
@@ -317,6 +353,7 @@ Examples:
 func textCommand(stdout, stderr io.Writer, exitCode *int) *cobra.Command {
 	var formatFlag string
 	var inputFlag string
+	var customToolsFlag string
 	var checkboxAIUsedLabel string
 	var checkboxAINotUsedLabel string
 	var enableCheckboxDetection bool
@@ -335,6 +372,7 @@ is the primary detector for non-commit text analysis.
 Examples:
   echo "I used Claude to write this" | disclosure text --format=json
   disclosure text --input=pr-body.txt
+  disclosure text --custom-tools=tools.json --input=pr-body.txt
   cat comment.txt | disclosure text --min-confidence=medium
   disclosure text --input=review.txt --format=json | jq '.findings'`,
 		Example: `  # Scan text from stdin
@@ -342,6 +380,9 @@ Examples:
 
   # Scan a file
   disclosure text --input=pr-body.txt
+
+  # Include custom tool and model names from a local JSON file
+  disclosure text --custom-tools=tools.json --input=pr-body.txt
 
   # Scan with medium confidence threshold
   cat comment.txt | disclosure text --min-confidence=medium
@@ -356,9 +397,25 @@ Examples:
 	--cb-disclosed-noai="AI was not used in this PR" \
 	--input=pr-body.txt
   `,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			var textBytes []byte
 			var err error
+			var customTools []string
+			if cmd.Flags().Changed("custom-tools") {
+				customTools, err = loadCustomTools(customToolsFlag)
+				if err != nil {
+					return err
+				}
+			}
+			detectors, err := allDetectors(detection.GetDefaultConfidenceLevels(), detectorConfig{
+				checkboxAIUsedLabel:     checkboxAIUsedLabel,
+				checkboxAINotUsedLabel:  checkboxAINotUsedLabel,
+				enableCheckboxDetection: enableCheckboxDetection,
+				customTools:             customTools,
+			})
+			if err != nil {
+				return err
+			}
 
 			if inputFlag == "-" {
 				textBytes, err = io.ReadAll(os.Stdin)
@@ -371,11 +428,6 @@ Examples:
 				return err
 			}
 
-			detectors := allDetectors(detection.GetDefaultConfidenceLevels(), detectorConfig{
-				checkboxAIUsedLabel:     checkboxAIUsedLabel,
-				checkboxAINotUsedLabel:  checkboxAINotUsedLabel,
-				enableCheckboxDetection: enableCheckboxDetection,
-			})
 			findings := scan.ScanText(string(textBytes), detectors)
 
 			switch formatFlag {
@@ -425,6 +477,7 @@ Examples:
 	)
 	cmd.Flags().StringVar(&formatFlag, "format", "text", "output format: json or text")
 	cmd.Flags().StringVar(&inputFlag, "input", "-", "input file path, or - for stdin")
+	cmd.Flags().StringVar(&customToolsFlag, "custom-tools", "", "local JSON file with version 1 and a custom_tools array of tool or model names")
 
 	return cmd
 }
