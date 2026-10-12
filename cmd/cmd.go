@@ -274,18 +274,28 @@ Examples:
 				return err
 			}
 
+			const updateInterval = 250 * time.Millisecond
 			var progress scan.ProgressFunc
 			progressShown := false
 			if !noProgressFlag {
 				startTime := time.Now()
+				var lastUpdate time.Time
+				var lastPhase scan.ProgressPhase
 				progress = func(phase scan.ProgressPhase, done, total int) {
 					if testHookLoading != nil && phase == scan.PhaseLoading {
 						testHookLoading()
 					}
-					if !progressShown && time.Since(startTime) < scanProgressDelay {
+					now := time.Now()
+					if !progressShown && now.Sub(startTime) < scanProgressDelay {
+						return
+					}
+					finished := phase == scan.PhaseScanning && done == total
+					if progressShown && phase == lastPhase && !finished && now.Sub(lastUpdate) < updateInterval {
 						return
 					}
 					progressShown = true
+					lastUpdate = now
+					lastPhase = phase
 					switch phase {
 					case scan.PhaseLoading:
 						fmt.Fprintf(stderr, "\rLoading commits: %d", done)

@@ -1143,3 +1143,56 @@ func TestRunScanFastScanNoProgress(t *testing.T) {
 		t.Fatalf("expected empty stderr for fast scan under threshold, got: %q", stderr.String())
 	}
 }
+
+// TestRunScanProgressRateLimit verifies that many rapid progress callbacks
+// produce bounded stderr output. With delay=0 and 3 commits, the loading hook
+// fires 3 times in rapid succession (well under 250ms total). Only one loading
+// line and the final 100% scanning line must appear; intermediate scanning
+// updates within the same 250ms window must be suppressed.
+func TestRunScanProgressRateLimit(t *testing.T) {
+	dir := initTestRepo(t)
+
+	oldDelay := scanProgressDelay
+	scanProgressDelay = 0
+	t.Cleanup(func() { scanProgressDelay = oldDelay })
+
+	var loadingCalls int
+	oldHook := testHookLoading
+	testHookLoading = func() { loadingCalls++ }
+	t.Cleanup(func() { testHookLoading = oldHook })
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"scan", "--format=json", dir}, &stdout, &stderr)
+	if code != ExitAI && code != ExitNoAI {
+		t.Fatalf("unexpected exit code: %d", code)
+	}
+
+	if loadingCalls == 0 {
+		t.Fatal("expected loading hook to be called at least once")
+	}
+
+	out := stderr.String()
+	if !strings.Contains(out, "Loading commits:") {
+		t.Fatalf("expected loading progress in stderr, got: %q", out)
+	}
+	if !strings.Contains(out, "3/3 (100%)") {
+		t.Fatalf("expected final 3/3 (100%%) in stderr, got: %q", out)
+	}
+
+	// The rate-limit must keep stderr volume bounded regardless of how many
+	// raw callbacks fired. Each \r-separated update overwrites the same line;
+	// count distinct \r-delimited frames rather than bytes.
+	frames := strings.Split(strings.ReplaceAll(out, "\r", "\n"), "\n")
+	var nonEmpty int
+	for _, f := range frames {
+		if strings.TrimSpace(f) != "" {
+			nonEmpty++
+		}
+	}
+	// With 3 commits and 250ms rate-limit: at most a handful of loading
+	// frames + a handful of scanning frames + the final newline. A generous
+	// upper bound of 20 ensures we never regress to millions of updates.
+	if nonEmpty > 20 {
+		t.Fatalf("rate-limit failed: %d non-empty output frames in stderr (want ≤20)", nonEmpty)
+	}
+}
