@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chaoss/disclosure/detection"
+	"github.com/chaoss/disclosure/gitops"
 	"github.com/chaoss/disclosure/scan"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -1051,6 +1053,60 @@ func TestRunScanSlowLoadingPhase(t *testing.T) {
 	}
 	if !strings.Contains(out, "3/3 (100%)") {
 		t.Fatalf("expected 3/3 (100%%) in stderr, got: %q", out)
+	}
+}
+
+func TestRunScanSlowRangeLoadingPhase(t *testing.T) {
+	dir := initTestRepo(t)
+
+	commits, err := gitops.ListCommits(dir, "")
+	if err != nil {
+		t.Fatalf("ListCommits: %v", err)
+	}
+	if len(commits) < 3 {
+		t.Fatalf("expected at least 3 commits, got %d", len(commits))
+	}
+
+	rangeArg := fmt.Sprintf("--range=%s..%s", commits[1].Hash, commits[0].Hash)
+
+	oldDelay := scanProgressDelay
+	scanProgressDelay = 10 * time.Millisecond
+	t.Cleanup(func() {
+		scanProgressDelay = oldDelay
+	})
+
+	var loadingCalls int
+	oldHook := testHookLoading
+	testHookLoading = func() {
+		loadingCalls++
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Cleanup(func() {
+		testHookLoading = oldHook
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := Run([]string{"scan", rangeArg, "--format=json", dir}, &stdout, &stderr)
+	if code != ExitAI && code != ExitNoAI {
+		t.Fatalf("unexpected exit code: %d", code)
+	}
+
+	out := stderr.String()
+	if !strings.Contains(out, "Loading commits:") {
+		t.Fatalf("expected loading progress in stderr for slow range-loading phase, got: %q", out)
+	}
+	if !strings.Contains(out, "Scanning commits:") {
+		t.Fatalf("expected scanning progress in stderr, got: %q", out)
+	}
+	if !strings.Contains(out, "1/1 (100%)") {
+		t.Fatalf("expected 1/1 (100%%) in stderr, got: %q", out)
+	}
+	// In a 3-commit repo (commits 0, 1, 2 where 2 is root):
+	// Building baseExclude traverses commits[1] and commits[2] (2 commits).
+	// Head walk traverses commits[0], commits[1] (excluded), and commits[2] (excluded) (3 commits).
+	// Both ancestry walks must report progress, resulting in 5 loading progress calls.
+	if loadingCalls != 5 {
+		t.Fatalf("expected 5 progress calls during ancestry walks (2 base + 3 head), got %d", loadingCalls)
 	}
 }
 

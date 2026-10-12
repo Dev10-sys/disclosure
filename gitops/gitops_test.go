@@ -315,3 +315,36 @@ func TestListCommitsWithProgress(t *testing.T) {
 		}
 	}
 }
+
+func TestListCommitsWithProgressRange(t *testing.T) {
+	dir, hashes := initTestRepo(t)
+
+	var loadedCalls []int
+	progress := func(loaded int) {
+		loadedCalls = append(loadedCalls, loaded)
+	}
+
+	// hashes contains 3 linear commits (hashes[0] through hashes[2]).
+	// Range: hashes[1]..hashes[2] (1-commit range)
+	// base (hashes[1]) ancestry walk visits: hashes[1], hashes[0] (2 commits)
+	// head (hashes[2]) ancestry walk visits: hashes[2], hashes[1], hashes[0] (3 commits)
+	// Total loading progress calls: 2 + 3 = 5
+	commits, err := ListCommitsWithProgress(dir, hashes[1]+".."+hashes[2], progress)
+	if err != nil {
+		t.Fatalf("ListCommitsWithProgress: %v", err)
+	}
+
+	if len(commits) != 1 {
+		t.Fatalf("got %d commits, want 1", len(commits))
+	}
+
+	if len(loadedCalls) != 5 {
+		t.Fatalf("expected 5 progress calls (2 base + 3 head walk), got %d", len(loadedCalls))
+	}
+
+	for i, count := range loadedCalls {
+		if count != i+1 {
+			t.Errorf("call %d = %d, want %d", i, count, i+1)
+		}
+	}
+}

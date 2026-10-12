@@ -569,17 +569,17 @@ func TestScanCommitRangeWithProgress(t *testing.T) {
 	if len(report.Commits) != 4 {
 		t.Fatalf("expected 4 commits, got %d", len(report.Commits))
 	}
-	if len(calls) != 8 {
-		t.Fatalf("expected 8 progress calls (4 loading + 4 scanning), got %d", len(calls))
+	if len(calls) != 10 {
+		t.Fatalf("expected 10 progress calls (6 loading + 4 scanning), got %d", len(calls))
 	}
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 6; i++ {
 		c := calls[i]
 		if c.phase != PhaseLoading || c.done != i+1 || c.total != 0 {
 			t.Errorf("loading call %d = %+v, want {PhaseLoading, %d, 0}", i, c, i+1)
 		}
 	}
 	for i := 0; i < 4; i++ {
-		c := calls[4+i]
+		c := calls[6+i]
 		if c.phase != PhaseScanning || c.done != i+1 || c.total != 4 {
 			t.Errorf("scanning call %d = %+v, want {PhaseScanning, %d, 4}", i, c, i+1)
 		}

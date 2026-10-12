@@ -315,23 +315,32 @@ func listCommitRange(repo *git.Repository, base, head plumbing.Hash, progress Pr
 		return nil, fmt.Errorf("reading base commit: %w", err)
 	}
 
+	loaded := 0
 	baseIter := object.NewCommitIterCTime(baseCommit, nil, nil)
-	_ = baseIter.ForEach(func(c *object.Commit) error {
+	err = baseIter.ForEach(func(c *object.Commit) error {
 		baseExclude[c.Hash] = true
+		loaded++
+		if progress != nil {
+			progress(loaded)
+		}
 		return nil
 	})
+	if err != nil {
+		return nil, fmt.Errorf("iterating base commits: %w", err)
+	}
 
 	// Walk from head, collecting commits not in base's ancestry
 	var commits []Commit
 	headIter := object.NewCommitIterCTime(headCommit, nil, nil)
 	err = headIter.ForEach(func(c *object.Commit) error {
+		loaded++
+		if progress != nil {
+			progress(loaded)
+		}
 		if baseExclude[c.Hash] {
 			return nil
 		}
 		commits = append(commits, commitFromObject(c, repo))
-		if progress != nil {
-			progress(len(commits))
-		}
 		return nil
 	})
 	if err != nil {
